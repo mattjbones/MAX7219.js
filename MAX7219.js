@@ -3,8 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var fs = require("fs");
-var SPI = require("spi");
+const fs = require("fs");
+const SPI = require("spi-device");
+const NO_OP = () => {};
 
 /**
  * MAX7219 abstraction.
@@ -30,27 +31,24 @@ var SPI = require("spi");
  *  disp.setDigitSymbol(2, "L");
  *  disp.setDigitSymbol(3, "P");
  *
- * @param string device
- *        The SPI device on which the controller is wired.
- *        For example, "/dev/spidev1.0".
+ * @param number bus 
+ *        The SPI bus on which the controller is wired.
+ *        For example, 0 for "/dev/spidev0.0"
+ * @param number device
+ * 				The device to start with when daisy-chained. Defaults to 0.
  * @param number count [optional]
  *        The total number of controllers when daisy-chained. Defaults to 1.
  * @param function callback [optional]
  *        Invoked once the connection to the SPI device is finished.
  */
-function MAX7219(device, count, callback) {
-  this._activeController = 0;
+function MAX7219(bus, device = 0, count, callback) {
+	this._bus = bus;
+  this._activeController = device;
   this._totalControllers = count || 1;
   this._buffer = new Buffer(this._totalControllers * 2);
-
-  this._spi = new SPI.Spi(device, {
-    mode: SPI.MODE.MODE_0,
-    chipSelect: SPI.CS.low
-  }, function(s) {
-    s.open();
-    process.nextTick(callback || function(){});
-  });
+  this._spi = SPI.openSync(bus, device);
 }
+
 
 /**
  * Controller registers, as specified in the datasheet.
@@ -74,27 +72,60 @@ MAX7219._Registers = {
 };
 
 /**
- * Controller BCD code font, as specified in the datasheet.
- * Don't modify this.
+ * Characters and numbers specified by segment digit
  */
 MAX7219._Font = {
-  "0": 0x00,
-  "1": 0x01,
-  "2": 0x02,
-  "3": 0x03,
-  "4": 0x04,
-  "5": 0x05,
-  "6": 0x06,
-  "7": 0x07,
-  "8": 0x08,
-  "9": 0x09,
-  "-": 0x0a,
-  "E": 0x0b,
-  "H": 0x0c,
-  "L": 0x0d,
-  "P": 0x0e,
-  " ": 0x0f
+	'0' : parseInt('1111110',2),
+	'1' : parseInt('0110000',2),
+	'2' : parseInt('1101101',2),
+	'3' : parseInt('1111001',2),
+	'4' : parseInt('0110011',2),
+	'5' : parseInt('1011011',2),
+	'6' : parseInt('1011111',2),
+	'7' : parseInt('1110000',2),
+	'8' : parseInt('1111111',2),
+	'9' : parseInt('1111011',2),
+	'a' : parseInt('1110111',2),
+	'b' : parseInt('0011111',2),
+	'c' : parseInt('0001101',2),
+	'd' : parseInt('0111101',2),
+	'E' : parseInt('1001111',2),
+	'e' : parseInt('1101111',2),
+	'f' : parseInt('1000111',2),
+	'g' : parseInt('1111011',2),
+	'H' : parseInt('0110111',2),
+	'h' : parseInt('0010111',2),
+	'i' : parseInt('0010000',2),
+	'j' : parseInt('0111100',2),
+	'k' : parseInt('1010111',2),
+	'l' : parseInt('0001110',2),
+	'm' : parseInt('1110110',2),
+	'n' : parseInt('0010101',2),
+	'o' : parseInt('0011101',2),
+	'p' : parseInt('1100111',2),
+	'q' : parseInt('1110011',2),
+	'r' : parseInt('0000101',2),
+	's' : parseInt('1011011',2),
+	't' : parseInt('0001111',2),
+	'u' : parseInt('0011100',2),
+	'v' : parseInt('0011100',2),
+	'w' : parseInt('0011100',2),
+	'x' : parseInt('0110111',2),
+	'y' : parseInt('0111011',2),
+	'z' : parseInt('1101101',2),
+	'-' : parseInt('0000001',2),
+	'_' : parseInt('0001000',2),
+	'[' : parseInt('1001110',2),
+	'(' : parseInt('1001110',2),
+	']' : parseInt('1111000',2),
+	')' : parseInt('1111000',2),
+	'°' : parseInt('1100011',2),
+	'\!' : parseInt('10100000',2),
+	'\'' : parseInt('0100000',2),
+	'\.' : parseInt('10000000',2),
 };
+
+MAX7219._BLANK = parseInt('00000000', 2);
 
 MAX7219.prototype = {
   /**
@@ -107,6 +138,8 @@ MAX7219.prototype = {
     if (index < 0 || index >= this._totalControllers) {
       throw "Controller index is out of bounds";
     }
+		this._spi.closeSync();
+		this._spi = SPI.openSync(bus, index)
     this._activeController = index;
   },
 
@@ -181,7 +214,7 @@ MAX7219.prototype = {
    *        modes would be [1,1,1,1,0,0,0,0].
    *
    * @param function callback [optional]
-   *        Invoked once the write to the SPI device finishes.
+   *        Invoked once the transferwrite to the SPI device finishes.
    */
   setDecodeMode: function(modes, callback) {
     if (modes.length != 8) {
@@ -234,7 +267,7 @@ MAX7219.prototype = {
    * @param function callback [optional]
    *        Invoked once the write to the SPI device finishes.
    */
-  setDigitSegments: function(n, segments, callback) {
+  setDigitSegments: function(n, segment, callback) {
     if (n < 0 || n > 7) {
       throw "Invalid digit number";
     }
@@ -260,8 +293,10 @@ MAX7219.prototype = {
    *
    * @param number n
    *        The digit number, from 0 up to and including 7.
-   * @param string symbol
+   * @param string symbol [optional]
    *        The symbol do display: "0".."9", "E", "H", "L", "P", "-" or " ".
+	 *				When no symbol is passed the number will be cleared - this is also
+	 *				the case for unmatched symbols.
    * @param boolean dp
    *        Specifies if the decimal point should be on or off.
    *
@@ -272,10 +307,13 @@ MAX7219.prototype = {
     if (n < 0 || n > 7) {
       throw "Invalid digit number";
     }
+		let hexSymbol = symbol;
     if (!(symbol in MAX7219._Font)) {
-      throw "Invalid symbol string";
-    }
-    var byte = MAX7219._Font[symbol] | (dp ? (1 << 7) : 0);
+			hexSymbol = MAX7219._BLANK
+    }else{
+			hexSymbol = MAX7219._Font[symbol];
+		}
+    var byte = hexSymbol | (dp ? (1 << 7) : 0);
     this._shiftOut(MAX7219._Registers["Digit" + n], byte, callback);
   },
 
@@ -368,21 +406,19 @@ MAX7219.prototype = {
    * @param function callback [optional]
    *        Invoked once the write to the SPI device finishes.
    */
-  _shiftOut: function(firstByte, secondByte, callback) {
+  _shiftOut: function(firstByte, secondByte, callback = NO_OP) {
     if (!this._spi) {
       throw "SPI device not initialized";
     }
+		
+		const message = [{
+			sendBuffer: Buffer.from([firstByte, secondByte]),
+			receiveBuffer: Buffer.alloc(2),
+			byteLength: 2,
+			speedHz: 20000,
+		}];
 
-    for (var i = 0; i < this._buffer.length; i += 2) {
-      this._buffer[i] = MAX7219._Registers.NoOp;
-      this._buffer[i + 1] = 0x00;
-    }
-
-    var offset = this._activeController * 2;
-    this._buffer[offset] = firstByte;
-    this._buffer[offset + 1] = secondByte;
-
-    this._spi.write(this._buffer, callback);
+    this._spi.transfer(message, callback);
   }
 };
 

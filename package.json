@@ -3,10 +3,6 @@
   "version": "1.0.1",
   "description": "Abstraction for the MAX7219 display driver controller",
   "main": "MAX7219.js",
-  "dependencies": {
-    "spi": "~0.2.0"
-  },
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -29,5 +25,8 @@
   "bugs": {
     "url": "https://github.com/victorporof/MAX7219.js/issues"
   },
-  "homepage": "https://github.com/victorporof/MAX7219.js"
+  "homepage": "https://github.com/victorporof/MAX7219.js",
+  "dependencies": {
+    "spi-device": "^3.1.0"
+  }
 }
