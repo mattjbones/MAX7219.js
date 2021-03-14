@@ -10,7 +10,7 @@ JavaScript abstraction for the MAX7219 display driver controller. Please read th
 ## How to use
 The "digits and segments" language isn't dissolved away by the API, to make your life easier when wiring the controller. Obviously, you can think of them as "cathodes and anodes" respectively when using this library. Multiplexing and persistence of vision is handled by the MAX7219, you only need to turn anodes on or off. Here's a quick example:
 ```javascript
-var disp = new MAX7219("/dev/spidev1.0");
+var disp = new MAX7219(0); // /dev/spidev0.0
 disp.setDecodeNone();
 disp.setScanLimit(8);
 disp.startup();
@@ -22,7 +22,7 @@ disp.setDigitSegments(3, [0, 1, 1, 0, 0, 1, 1, 1]);
 
 Alternatively, using the BCD code font decoding is supported. Here's how to set it up:
 ```javascript
-var disp = new MAX7219("/dev/spidev1.0");
+var disp = new MAX7219(0); // /dev/spidev0.0
 disp.setDecodeAll();
 disp.setScanLimit(8);
 disp.startup();
@@ -34,7 +34,7 @@ disp.setDigitSymbol(3, "P");
 
 ## Prerequisites
 
-The `node-spi` library is required. Get it from [here](https://github.com/RussTheAerialist/node-spi), or via `npm install spi`.
+The `spi-device` library is required. Get it from [here](https://github.com/fivdi/spi-device), or via `npm install spi-device`.
 
 You'll also need to make sure SPI devices are enabled (and you have a reasonably up-to-date Linux kernel). Here's how you can check this:
 
@@ -63,9 +63,9 @@ Easy as pie! Simply `sudo nano /etc/modprobe.d/raspi-blacklist.conf` and add a `
 
 ## API
 
-* Constructor __**`MAX7219(device, count, callback)`**__
+* Constructor __**`MAX7219(bus, device=0, count, callback)`**__
 
-Initializes an instance of the controller abstraction. The `device` argument is a string specifying the SPI device on which the controller is wired. For example, `"/dev/spidev1.0"`. The optional `count` argument specifies the total number of chips when several MAX7219s are daisy-chained.
+Initializes an instance of the controller abstraction. The `bus` argument is a number specificying the SPI bus to use and `device` argument is a number specifying the SPI device on which the controller is wired, defaults to 0. For example, `MAX7219(1,0)` would target SPI device `/dev/spidev1.0`. The optional `count` argument specifies the total number of chips when several MAX7219s are daisy-chained [untested].
 
 * __**`setActiveController(index)`**__
 
