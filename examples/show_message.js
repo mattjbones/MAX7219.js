@@ -6,4 +6,4 @@ disp.setScanLimit(8);
 disp.startup();
 disp.clearDisplay();
 
-disp.showMessage("Hello, everyone", 250);
+disp.showMessage("Hello kat!", 250, true);

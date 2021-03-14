@@ -8,8 +8,3 @@ disp.startup();
 disp.clearDisplay();
 
 disp.setText(name);
-
-
-process.on('SIGINT', ()=>{
-	disp.shutdown();
-});

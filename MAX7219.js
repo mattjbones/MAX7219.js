@@ -46,6 +46,7 @@ function MAX7219(bus, device = 0, count, callback) {
 	this._bus = bus;
   this._activeController = device;
   this._totalControllers = count || 1;
+	this._buffer = Array(this._totalControllers * MAX7219._DISPLAY_LENGTH).fill(' ');
   this._spi = SPI.openSync(bus, device);
 }
 
@@ -318,8 +319,30 @@ MAX7219.prototype = {
 			hexSymbol = MAX7219._Font[symbol];
 		}
     var byte = hexSymbol | (dp ? (1 << 7) : 0);
+		this._buffer[n] = byte;
     this._shiftOut(MAX7219._Registers["Digit" + n], byte, callback);
   },
+
+	shiftRight: function (redraw = true) {
+		this._buffer = [...this._buffer.slice(1), ' '];
+		if(redraw){
+			this.flushBuffer();
+		}
+	},
+
+	shiftLeft: function(redraw = true) {
+		this._buffer = [' ',...this._buffer.slice(0, 7)];
+		if(redraw){
+			this.flushBuffer();
+		}
+	},
+
+	flushBuffer: function (){
+		this._buffer.forEach((byte,i) => {
+			const digit = MAX7219._Registers[`Digit${i}`];
+			this._shiftOut(digit, byte)
+		});
+	},
 
 	/**
 	 *	Sets text on the display limited to 8 chars 
@@ -337,6 +360,7 @@ MAX7219.prototype = {
 		chars.forEach((char, i)=> {
 			const digit = MAX7219._Registers[`Digit${i}`];
 			const charCode = MAX7219._Font[char] ?? MAX7219._BLANK;
+			this._buffer[i] = char;
 			this._shiftOut(digit, charCode,  callback)
 		});
 	},
@@ -506,7 +530,6 @@ MAX7219.prototype = {
     if (!this._spi) {
       throw "SPI device not initialized";
     }
-		
 		const message = [{
 			sendBuffer: Buffer.from([firstByte, secondByte]),
 			receiveBuffer: Buffer.alloc(2),
