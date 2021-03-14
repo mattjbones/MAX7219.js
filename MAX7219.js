@@ -6,6 +6,7 @@
 const fs = require("fs");
 const SPI = require("spi-device");
 const NO_OP = () => {};
+const sleep = (duration) => new Promise(rs => setTimeout(rs, duration));
 
 /**
  * MAX7219 abstraction.
@@ -45,10 +46,10 @@ function MAX7219(bus, device = 0, count, callback) {
 	this._bus = bus;
   this._activeController = device;
   this._totalControllers = count || 1;
-  this._buffer = new Buffer(this._totalControllers * 2);
   this._spi = SPI.openSync(bus, device);
 }
 
+MAX7219._DISPLAY_LENGTH = 8;
 
 /**
  * Controller registers, as specified in the datasheet.
@@ -75,6 +76,7 @@ MAX7219._Registers = {
  * Characters and numbers specified by segment digit
  */
 MAX7219._Font = {
+	' ' : parseInt('0000000',2),
 	'0' : parseInt('1111110',2),
 	'1' : parseInt('0110000',2),
 	'2' : parseInt('1101101',2),
@@ -125,7 +127,7 @@ MAX7219._Font = {
 	'\.' : parseInt('10000000',2),
 };
 
-MAX7219._BLANK = parseInt('00000000', 2);
+MAX7219._BLANK = parseInt('00010000', 2);
 
 MAX7219.prototype = {
   /**
@@ -161,6 +163,7 @@ MAX7219.prototype = {
    *        Invoked once the write to the SPI device finishes.
    */
   startup: function(callback) {
+		this._started = true;
     this._shiftOut(MAX7219._Registers.Shutdown, 0x01, callback);
   },
 
@@ -174,6 +177,7 @@ MAX7219.prototype = {
    *        Invoked once the write to the SPI device finishes.
    */
   shutdown: function(callback) {
+		this._started = false;
     this._shiftOut(MAX7219._Registers.Shutdown, 0x00, callback);
   },
 
@@ -217,7 +221,7 @@ MAX7219.prototype = {
    *        Invoked once the transferwrite to the SPI device finishes.
    */
   setDecodeMode: function(modes, callback) {
-    if (modes.length != 8) {
+    if (modes.length != MAX7219._DISPLAY_LENGTH){
       throw "Invalid decode mode array";
     }
     this._decodeModes = modes;
@@ -271,7 +275,7 @@ MAX7219.prototype = {
     if (n < 0 || n > 7) {
       throw "Invalid digit number";
     }
-    if (segments.length != 8) {
+    if (segments.length != MAX7219._DISPLAY_LENGTH) {
       throw "Invalid segments array";
     }
     this.setDigitSegmentsByte(n, this.encodeByte(segments), callback);
@@ -316,6 +320,98 @@ MAX7219.prototype = {
     var byte = hexSymbol | (dp ? (1 << 7) : 0);
     this._shiftOut(MAX7219._Registers["Digit" + n], byte, callback);
   },
+
+	/**
+	 *	Sets text on the display limited to 8 chars 
+	 *	
+	 *	@param string value 
+	 *				 Text to display 
+	 *  @param function callback [optional]
+	 *  				Invoked once the write to the SPI device finishes.
+	 */
+	setText: function(value, callback) {
+		if(!value.length){
+			throw "Invalid text"
+		}
+		const chars = [...value].slice(0,MAX7219._DISPLAY_LENGTH).reverse();
+		chars.forEach((char, i)=> {
+			const digit = MAX7219._Registers[`Digit${i}`];
+			const charCode = MAX7219._Font[char] ?? MAX7219._BLANK;
+			this._shiftOut(digit, charCode,  callback)
+		});
+	},
+
+
+	/**
+	 *	Shows a scrolling message on the display
+	 *
+	 *	@param string value 
+	 *					Text to display
+	 *
+	 *	@param delay number
+	 *					Time in miliseconds scroll default 500ms
+	 */
+	showMessage: async function(value, delay = 500, repeat = false) {
+		if(!value.length){
+			throw "Invalid text"
+		}
+		const chars = [...value];
+
+		let position = -1;
+		const endPosition = chars.length - 1;
+
+		while(position <= endPosition && this._started){
+			++position;
+
+			const messagePortion = chars.slice(position, position + MAX7219._DISPLAY_LENGTH)
+			const bufferedMessagePortion = messagePortion.length < MAX7219._DISPLAY_LENGTH ? 
+				[...messagePortion, ' ', ...Array(MAX7219._DISPLAY_LENGTH - messagePortion.length ).fill(' ')] 
+				: messagePortion;
+
+
+			this.setText(bufferedMessagePortion);
+			if(repeat && position == endPosition){
+				position = -1;
+			}
+			await sleep(delay);
+		}
+	},
+
+	/**
+	 *	Shows a rotating message on the display
+	 *
+	 *	@param string value 
+	 *					Text to display
+	 *
+	 *	@param delay number
+	 *					Time in miliseconds scroll default 500ms
+	 */
+	showRotatingMessage: async function(value, delay = 500) {
+		if(!value.length){
+			throw "Invalid text"
+		}
+		const chars = [...Array(MAX7219._DISPLAY_LENGTH - 1).fill(' '), ...value];
+
+		let position = -1;
+		const endPosition = chars.length - 1;
+
+		while(position <= endPosition){
+			++position;
+
+			const messagePortion = chars.slice(position, position + MAX7219._DISPLAY_LENGTH)
+			const bufferedMessagePortion = messagePortion.length < MAX7219._DISPLAY_LENGTH ? 
+				[...messagePortion, ' ', ...chars.slice(0, MAX7219._DISPLAY_LENGTH - messagePortion.length)] 
+				: messagePortion;
+	
+
+			this.setText(bufferedMessagePortion);
+
+			await sleep(delay);
+			if(position === endPosition){
+				position = -1;
+			}
+		}
+	},
 
   /**
    * Sets all segments for all digits off.
